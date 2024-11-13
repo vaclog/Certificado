@@ -1,0 +1,5 @@
+Texto: '10144' | Coordenadas: (x: 953, y: 103, w: 54, h: 15)
+Texto: '5/11/2024' | Coordenadas: (x: 813, y: 137, w: 106, h: 18)
+Texto: '5/11/2024' | Coordenadas: (x: 196, y: 405, w: 71, h: 12)
+Texto: '5/11/2024' | Coordenadas: (x: 346, y: 405, w: 71, h: 12)
+Texto: '041386' | Coordenadas: (x: 196, y: 558, w: 52, h: 12)
