@@ -1,4 +1,5 @@
 import traceback
+import inspect
 import fitz  # PyMuPDF
 import re
 from dotenv import load_dotenv
@@ -7,8 +8,11 @@ import logging
 import fnmatch
 import shutil
 import pandas as pd
-from openpyxl import load_workbook
+from datetime import datetime
+import db
+import util
 load_dotenv()
+import smtp 
 
 log_level = os.getenv('LOG_LEVEL', 'INFO')  # Valor por defecto 'INFO' si no está definido
 
@@ -49,8 +53,17 @@ def extraer_informacion_pdf(ruta_pdf):
     fechas = re.findall(r'\d{1,2}/\d{1,2}/\d{4}', texto_completo)
     fecha_encontrada = fecha.group() if fecha else "No encontrado"
 
-    certificados = re.search(r'Certificado:\s*([\d\s\w]+)', texto_completo)
-    certificados_encontrados = certificados.group(1).strip() if certificados else "No encontrado"
+    patron_certificado = r'Certificado\s+([A-Z0-9\s]+)\s*Certificado:\s*(\d+)'
+    coincidencias = re.findall(patron_certificado, texto_completo)
+    certificados = re.findall(r'Certificado:\s*([\d\s\w]+)', texto_completo)
+    certificados_encontrados = []
+    if len(certificados) >= 1:
+        for certificado in certificados:
+            valor = certificado.split('\n')[0]
+            if valor:  # Esto verifica que no sea nulo o vacío
+                certificados_encontrados.append(valor)
+    
+        
 
     return rx_encontrado, fecha_encontrada, certificados_encontrados
 
@@ -102,108 +115,72 @@ def mover_archivo(nombre_archivo, directorio_destino):
 
     return nombre_archivo_nuevo
 
-def agregar_filas_sin_duplicados_excel(archivo_excel, nuevas_filas):
-    """
-    Agrega nuevas filas al final de un archivo Excel si no existen.
 
-    Parámetros:
-    - archivo_excel (str): Ruta del archivo Excel existente.
-    - nuevas_filas (list of dict): Lista de nuevas filas a agregar. Cada fila se representa como un diccionario con clave-valor correspondiente a las columnas.
-
-    Retorna:
-    - None
-    """
-    # Verifica si el archivo existe
-    if os.path.isfile(archivo_excel):
-        # Carga el archivo existente
-        df_existente = pd.read_excel(archivo_excel)
-    else:
-        # Si el archivo no existe, crea un DataFrame vacío
-        df_existente = pd.DataFrame()
-
-    # Convierte las nuevas filas a un DataFrame
-    df_nuevas_filas = pd.DataFrame(nuevas_filas)
-
-    #if 'Fecha Remito' in df_nuevas_filas.columns:
-    #    df_nuevas_filas['Fecha Remito'] = pd.to_datetime(df_nuevas_filas['Fecha Remito'], errors='coerce').dt.strftime('%d/%m/%Y')  # Convertir a fecha
-    if 'Certificado' in df_nuevas_filas.columns:
-        df_nuevas_filas['Certificado'] = df_nuevas_filas['Certificado'].astype(str)  # Convertir a string
-
-    # Verifica si hay duplicados y elimina las filas que ya existen
-    if not df_existente.empty:
-        # Compara las filas y descarta las que ya existen en el archivo
-        df_actualizado = pd.concat([df_existente, df_nuevas_filas], ignore_index=True).drop_duplicates(keep='first')
-    else:
-        # Si el archivo está vacío, simplemente usa las nuevas filas
-        df_actualizado = df_nuevas_filas
-
-    # Guarda el archivo actualizado
-    df_actualizado.to_excel(archivo_excel, index=False)
-def verificar_y_agregar_filas_excel(archivo_excel, nuevas_filas, columnas, hoja='Sheet1'):
-    """
-    Verifica si las filas ya existen en un archivo Excel y las agrega si no están presentes.
-
-    Parámetros:
-    - archivo_excel (str): Ruta del archivo Excel.
-    - nuevas_filas (list of dict): Lista de nuevas filas a verificar y agregar.
-    - columnas (list of str): Lista de nombres de las columnas para identificar duplicados.
-    - hoja (str): Nombre de la hoja donde agregar las filas (por defecto 'Sheet1').
-
-    Retorna:
-    - None
-    """
-    # Carga el archivo Excel
-    wb = load_workbook(archivo_excel)
-    if hoja not in wb.sheetnames:
-        raise ValueError(f"La hoja '{hoja}' no existe en el archivo Excel.")
-    ws = wb[hoja]
-
-    # Obtener encabezados
-    headers = [cell.value for cell in ws[1]]
-    # Crear conjunto para valores existentes
-    valores_existentes = set()
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        valores = tuple(row[headers.index(col)] for col in columnas)
-        valores_existentes.add(valores)
-
-    # Agregar nuevas filas si no existen
-    for fila in nuevas_filas:
-        valores_nuevos = tuple(fila.get(col, "") for col in columnas)
-        if valores_nuevos not in valores_existentes:
-            nueva_fila = [fila.get(header, "") for header in headers]
-            ws.append(nueva_fila)
-            valores_existentes.add(valores_nuevos)
-
-    # Guardar archivo
-    wb.save(archivo_excel)
-def main():
+def convertir_fecha(fecha_str):
     try:
+        # Separar la fecha en partes
+        dia, mes, anio = fecha_str.split('/')
+        # Formatear la fecha en 'yyyy-mm-dd'
+        return f"{anio}-{mes}-{dia}"
+    except ValueError:
+        return "Formato de fecha inválido"
+
+def main():
+    
+    try:
+        start_time = util.show_time("Inicio")
         attachments_folder = os.getenv('ATTACHMENTS_FOLDER', '') 
         # Rutas a los archivos PDF (ajusta según sea necesario)
-        archivos_pdf = buscar_pdfs_con_nombre_similar(attachments_folder, patron="CAC01005448-ORG-RX0001-*.pdf")
+        archivos_pdf = buscar_pdfs_con_nombre_similar(attachments_folder, patron="CAC*-ORG-RX0001-*.pdf")
         filas = []
+        dbase = db.DB()
+        
         for archivo in archivos_pdf:
             rx, fecha, certificados = extraer_informacion_pdf(archivo)
             print(f"Archivo: {archivo}")
             print(f"RX0001: {rx}")
             print(f"Primera Fecha: {fecha}")
-            print(f"Certificados: {expandir_rango(certificados)}")  # Expandir el rango de certificados y mostrarlos separados por comascertificados}")
-            print("-" * 40)
-            
-            for certificado in expandir_rango(certificados):
-                filas.append([{"Remito": rx, "Fecha Remito": fecha, "Certificado": certificado}])
+            fecha_remito = convertir_fecha(fecha)  # Convertir la fecha
+            nro_remito = rx
+
+            if len(certificados) > 0:
+                for certificado in certificados:
+                    print(f"Certificados: {expandir_rango(certificado)}")  # Expandir el rango de certificados y mostrarlos separados por comascertificados}")
+                    print("-" * 40)
+                
+                    for cert in expandir_rango(certificado):
+                        fecha_alta = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        
+                        dbase.CertificadoInsert((nro_remito, fecha_remito, cert, fecha_alta, 'proceso de alta'))
+            else:
+                print("No se encontraron certificados en el PDF.")
+                fecha_alta = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                dbase.CertificadoInsert((nro_remito, fecha_remito, '', fecha_alta, 'proceso de alta'))
 
             
             # Mover el archivo a la carpeta "procesados"
             mover_archivo(archivo, os.getenv('PROCESSED_FOLDER', ''))
-        if filas != []:
-            columnas_para_verificar = ['Remito', 'Fecha Remito', 'Certificado']
-            verificar_y_agregar_filas_excel(os.getenv('EXCEL_FILE', ''), filas, columnas_para_verificar)
-
-            #agregar_filas_sin_duplicados_excel(os.getenv('EXCEL_FILE', ''), filas)
-            print(filas)
+        end_time = util.show_time("Fin")
+        print(f"Tiempo de ejecución: {end_time - start_time}")
     except Exception as e:
+        description = traceback.format_exc()
         traceback.print_exc()
+        print(description)
+        frame = inspect.currentframe()
+        function_name = inspect.getframeinfo(frame).function
+        print(f"Error ocurrió en la función: {function_name}")
+        print(f"Archivo: {inspect.getfile(frame)}")
         print(f"Error: {e}")
+
+        html_msg = f"""<html>
+        <body>
+            <p>Error ocurrido en la función: {function_name}</p>
+            <p>Archivo: {inspect.getfile(frame)}</p>
+            <p>Error: {e}</p>
+            <p>Descripción: {description}</p>
+        </body>
+        </html>"""
+        smtp.smtp.SendMail(os.getenv('EMAIL_TICKETS', ''), f"Lectura de Remito {archivo}", f"{description} {frame} {function_name}",html_msg , "")
 
 main()

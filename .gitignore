@@ -4,3 +4,10 @@
 *.png
 *.jpeg
 *.xlsx
+__pycache__
+images
+processed
+recortes
+attached
+help/*.*
+help

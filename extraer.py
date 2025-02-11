@@ -5,6 +5,7 @@ import pytesseract
 from dotenv import load_dotenv
 import os
 import logging
+import db
 load_dotenv()
 
 log_level = os.getenv('LOG_LEVEL', 'INFO')  # Valor por defecto 'INFO' si no está definido
@@ -63,9 +64,8 @@ def main():
         
         # Rutas a los archivos PDF (ajusta según sea necesario)
         archivos_pdf = [
-            "CAC01005448-ORG-RX0001-10144.pdf",  # Ajusta según tus rutas
-            "CAC01005448-ORG-RX0001-10211.pdf",
-            "CAC01005448-ORG-RX0001-10171.pdf"
+            "CAC01005448-ORG-FC0003-3781.pdf",  # Ajusta según tus rutas
+           
         ]
 
         # Procesar cada archivo PDF y extraer texto de las áreas de interés
