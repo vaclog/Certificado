@@ -24,13 +24,7 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
-def expandir_rango(rango_str):
-    if "al" in rango_str:
-        partes = rango_str.split("al")
-        inicio = int(partes[0].strip())
-        fin = int(partes[1].strip())
-        return [str(num).zfill(len(partes[0].strip())) for num in range(inicio, fin + 1)]
-    return [rango_str.strip()]
+
 
 def extraer_informacion_pdf(ruta_pdf):
     # Abrir el archivo PDF
@@ -55,16 +49,16 @@ def extraer_informacion_pdf(ruta_pdf):
 
     patron_certificado = r'Certificado\s+([A-Z0-9\s]+)\s*Certificado:\s*(\d+)'
     coincidencias = re.findall(patron_certificado, texto_completo)
-    certificados = re.findall(r'Certificado:\s*([\d\s\w]+)', texto_completo)
+    certificados = re.findall(r'(Certificado|Block):\s*([\d\s\w\/]+)', texto_completo)
     certificados_encontrados = []
     if len(certificados) >= 1:
         for certificado in certificados:
-            valor = certificado.split('\n')[0]
+            valor = certificado[1].split('\n')[0]
             if valor:  # Esto verifica que no sea nulo o vacío
                 certificados_encontrados.append(valor)
     
         
-
+    documento.close()
     return rx_encontrado, fecha_encontrada, certificados_encontrados
 
 
@@ -131,7 +125,7 @@ def main():
         start_time = util.show_time("Inicio")
         attachments_folder = os.getenv('ATTACHMENTS_FOLDER', '') 
         # Rutas a los archivos PDF (ajusta según sea necesario)
-        archivos_pdf = buscar_pdfs_con_nombre_similar(attachments_folder, patron="CAC*-ORG-RX0001-*.pdf")
+        archivos_pdf = buscar_pdfs_con_nombre_similar(attachments_folder, patron="*RX*.pdf")
         filas = []
         dbase = db.DB()
         
@@ -145,10 +139,10 @@ def main():
 
             if len(certificados) > 0:
                 for certificado in certificados:
-                    print(f"Certificados: {expandir_rango(certificado)}")  # Expandir el rango de certificados y mostrarlos separados por comascertificados}")
+                    print(f"Certificados: {util.expandir_rango(certificado)}")  # Expandir el rango de certificados y mostrarlos separados por comascertificados}")
                     print("-" * 40)
                 
-                    for cert in expandir_rango(certificado):
+                    for cert in util.expandir_rango(certificado):
                         fecha_alta = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         
                         

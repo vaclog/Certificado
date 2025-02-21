@@ -42,6 +42,14 @@ def main():
             if dbase.esPlanificable(nro_factura) == 0:
                 print(f"Factura {nro_factura} fue planificada en el robot")
                 dbase.insertRobotTarea( parametros)
+                html_msg = f"""<html>
+                        <body>
+                            
+                            <p>Descripción: Factura {nro_factura} fue planificada en el robot</p>
+                        </body>
+                        </html>"""
+                smtp.smtp.SendMail(os.getenv('EMAIL_ADMINISTRACION', ''), f"Factura {nro_factura} planificada al robot", "",html_msg , "")
+
         end_time = util.show_time("Fin")
         print(f"Tiempo de ejecución: {end_time - start_time}")
     except Exception as e:

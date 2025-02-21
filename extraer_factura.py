@@ -28,13 +28,6 @@ logging.basicConfig(
 
 
 
-def expandir_rango(rango_str):
-    if "al" in rango_str:
-        partes = rango_str.split("al")
-        inicio = int(partes[0].strip())
-        fin = int(partes[1].strip())
-        return [str(num).zfill(len(partes[0].strip())) for num in range(inicio, fin + 1)]
-    return [rango_str.strip()]
 
 def extraer_cabecera(pagina, texto_completo):
     coordenadas_area_fecha = (310, 42, 510, 80) # Ajusta las coordenadas de acuerdo a tus necesidades
@@ -194,54 +187,75 @@ def main():
                 total_calculado = 0
                 values = []
                 print("-" * 40)
-                if dbase.existeFactura(nro_factura):
-                    print(f"La factura {nro_factura} ya existe en la base de datos.")
-                else:
-                    for certificado in certificados:
-                        #print(f"Certificados: {expandir_rango(certificado[5])}")  # Expandir el rango de certificados y mostrarlos separados por comascertificados}")
-                        print(certificado)
-                        tipo = certificado[0]
-                        cant = int(certificado[1])
-                        total_calculado += util.convert_decimal_from_spanish_to_english_format  (certificado[2])
-                        subtotal = util.convert_decimal_from_spanish_to_english_format(certificado[2])
-                        precio_unitario = util.convert_decimal_from_spanish_to_english_format(certificado[3])
-                        cert=certificado[5].strip()
-                        nro_remito = int(certificado[6].split('-')[1].strip()) if isinstance(certificado[6], str) and '-' in certificado[6].split('-')[0].strip() else   certificado[6].split('-')[1].strip()
-                        if tipo == 'VISADOS' or 'Block' in tipo:
-                            precio_unitario = precio_unitario * cant
-                        for ce in expandir_rango(cert):
-                            fecha_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                            
-                            values.append([nro_remito, ce, fecha_factura, nro_factura, precio_unitario, fecha_update,'proceso de facturación', tipo])
-
+                ##if dbase.existeFactura(nro_factura):
+                ##    print(f"La factura {nro_factura} ya existe en la base de datos.")
+                ##else:
+                for certificado in certificados:
+                    #print(f"Certificados: {expandir_rango(certificado[5])}")  # Expandir el rango de certificados y mostrarlos separados por comascertificados}")
+                    print(certificado)
+                    tipo = certificado[0]
+                    cant = int(certificado[1])
+                    total_calculado += util.convert_decimal_from_spanish_to_english_format  (certificado[2])
+                    
+                    subtotal = util.convert_decimal_from_spanish_to_english_format(certificado[2])
+                    precio_unitario = util.convert_decimal_from_spanish_to_english_format(certificado[3])
+                    cert=certificado[5].strip()
+                    nro_remito = int(certificado[6].split('-')[1].strip()) if isinstance(certificado[6], str) and '-' in certificado[6].split('-')[0].strip() else   certificado[6].split('-')[1].strip()
+                    if tipo == 'VISADOS' or 'Block' in tipo:
+                        precio_unitario = precio_unitario * cant
+                    
+                    if cert == '':
+                        fecha_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         
-                    
-                    
-                    total_calculado, remitos_no_encontrados = dbase.CertificadoFactura(values, total)
-                    print(f"Total: {total}")
-                    print(f"Remitos no encontrados: {remitos_no_encontrados}")
-                    dbase.CertificadoDocumentoInsertOrUpdate([os.path.basename(archivo), nro_factura,  total, total_calculado])
-                    
-                    if len(remitos_no_encontrados) > 0:
-                        html_msg_admin = f"""<html>
-                        <body>
-                            <p>Para la factura: <strong>{nro_factura}</strong></p
-                            <p>del archivo: {os.path.basename(archivo)}</p>
-                            <p>Los siguientes Remitos no fueron encontrados en la base de datos de certificados de orgien:</p>
-                            <ul>
-                                {''.join([f'<li>{remito}</li>' for remito in remitos_no_encontrados])}
-                            </ul>
-                            <p>Por favor reenviar los mails con los remitos a la casilla <strong>{os.getenv('EMAIL_USER', '')}</strong> para su procesamiento</p>
+                        values.append([nro_remito, cert, fecha_factura, nro_factura, precio_unitario, fecha_update,'proceso de facturación', tipo])
+                    for ce in util.expandir_rango(cert):
+                        fecha_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        values.append([nro_remito, ce, fecha_factura, nro_factura, precio_unitario, fecha_update,'proceso de facturación', tipo])
 
-                        </body>
-                        </html>"""
-                        raise util.PDFInconsistente(f"Los remitos no fueron encontrados para la factura {nro_factura}.")
-                    # Mover el archivo a la carpeta "procesados"
                     
-                    if total != total_calculado:
-                        raise util.PDFInconsistente("El total en el PDF no coincide con el total calculado.")
                 
-                mover_archivo(archivo, os.getenv('PROCESSED_FOLDER', ''))
+                
+                total_calculado, remitos_no_encontrados = dbase.CertificadoFactura(values, total)
+                print(f"Total: {total}")
+                print(f"Remitos no encontrados: {remitos_no_encontrados}")
+                dbase.CertificadoDocumentoInsertOrUpdate([os.path.basename(archivo), nro_factura,  total, total_calculado])
+                
+                if len(remitos_no_encontrados) > 0:
+                    html_msg_admin = f"""<html>
+                    <body>
+                        <p>Para la factura: <strong>{nro_factura}</strong></p
+                        <p>del archivo: {os.path.basename(archivo)}</p>
+                        <p>Los siguientes Remitos no fueron encontrados en la base de datos de certificados de orgien:</p>
+                        <ul>
+                            {''.join([f'<li>{remito}</li>' for remito in remitos_no_encontrados])}
+                        </ul>
+                        <p>Por favor reenviar los mails con los remitos a la casilla <strong>{os.getenv('EMAIL_USER', '')}</strong> para su procesamiento</p>
+
+                    </body>
+                    </html>"""
+                    raise util.PDFInconsistente(f"Los remitos no fueron encontrados para la factura {nro_factura}.")
+                # Mover el archivo a la carpeta "procesados"
+                
+                if total != total_calculado:
+                    html_msg_admin = f"""<html>
+                    <body>
+                        <p>Para la factura: <strong>{nro_factura}</strong></p
+                        <p>del archivo: {os.path.basename(archivo)}</p>
+                        <p>El total en el PDF no coincide con el total calculado:</p>
+                        <ul>
+                            <li>Total PDF: {total}</li>
+                            <li>Total Calculado: {total_calculado}</li>
+                        </ul>
+                        <p>Por favor reenviar los mails con los remitos a la casilla <strong>{os.getenv('EMAIL_USER', '')}</strong> para su procesamiento</p>
+
+                    </body>
+                    </html>"""
+                    
+                    raise util.PDFInconsistente("El total en el PDF no coincide con el total calculado.")
+                else:
+                    mover_archivo(archivo, os.getenv('PROCESSED_FOLDER', ''))
+                    
             except util.PDFInconsistente as e:
                 
                 print(f"Error: {e}")

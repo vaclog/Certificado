@@ -37,6 +37,7 @@ class DB:
         check_query = """
             SELECT COUNT(*) FROM cert_origen_facturacion
             WHERE nro_remito = %s 
+             AND anulado = 'N'
             """
        
 
@@ -95,10 +96,12 @@ class DB:
                                             tipo = '{tipo}'
                                             
                                     WHERE nro_remito = {nro_remito} 
+                                    AND anulado = 'N'
                                 
                                 """
+                        
                         if ( len(data[1]) == 0 ):
-                            sentence += " AND certificado = ''"
+                            sentence += " " # en los casos de BLOCK y VISADO no indica el numero de certificado en la factura pero si en el remito
                         #    raise util.PDFInconsistente(f"ERROR: NO SE UBICO EN LA TABLA el certificado {data[1]} del remito {data[0]}")
                             
                             
@@ -107,17 +110,19 @@ class DB:
                             certificado = data[1]
                             sentence += f""" AND certificado = '{certificado}' """
                             
-                        print(sentence) 
+                        #print(sentence) 
                         resp_db= cursor.execute(sentence)
 
                         
                         self.conn.commit()
                         if cursor.rowcount == 1 or cursor.affected_rows == 1:
                             total_calculado += data[4]
+                            
                             #print("Encontrados ", data[0], data[1], data[2], data[3], data[4], data[5], data[6])
                         else:
                             
                             raise util.PDFInconsistente(f"ERROR: NO SE UBICO EN LA TABLA el certificado {data[1]} del remito {data[0]}")
+                        
                     except util.PDFInconsistente as e:  
                         self.agregarRemitoNoEncontrado(remitos_no_encontrados, data[0])  
                         print(e)
@@ -214,6 +219,7 @@ class DB:
                           FROM cert_origen_facturacion
                          WHERE numop = 0
                            AND nro_factura = ?
+                           AND anulado = 'N'
                     """
         with self.conn.cursor(dictionary=True) as cursor:
             cursor.execute(sentence, [nro_factura])
