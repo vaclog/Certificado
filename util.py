@@ -59,6 +59,11 @@ def expandir_rango(rango_str):
         for parte in partes:
             retornar.append(parte.strip())
         return retornar
+    elif "-" in rango_str:
+        partes = rango_str.split("-")
+        for parte in partes:
+            retornar.append(parte.strip())
+        return retornar
     else:
         resultado = re.findall(r'\d+', rango_str.strip())
         return resultado

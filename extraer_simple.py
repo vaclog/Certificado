@@ -49,7 +49,7 @@ def extraer_informacion_pdf(ruta_pdf):
 
     patron_certificado = r'Certificado\s+([A-Z0-9\s]+)\s*Certificado:\s*(\d+)'
     coincidencias = re.findall(patron_certificado, texto_completo)
-    certificados = re.findall(r'(Certificado|Block):\s*([\d\s\w\/]+)', texto_completo)
+    certificados = re.findall(r'(Certificado|Block):\s*([\d\s\w\/\-]+)', texto_completo)
     certificados_encontrados = []
     if len(certificados) >= 1:
         for certificado in certificados:
