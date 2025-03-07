@@ -1,5 +1,5 @@
 
-LOG_FILE=C:\Users\desarrollo\Certificado\remitos.log
+set LOG_FILE=C:\Users\desarrollo\Certificado\remitos.log
 
 echo "Starting" > %LOG_FILE% 2>&1
 call C:\Users\desarrollo\miniconda3\Scripts\activate.bat Certificado
