@@ -149,10 +149,12 @@ class DB:
                                 total_factura=%s,
                                 total_calculado = %s
                     WHERE archivo = %s
+                      AND anulado = 'N'
                     """
         check_query = f"""
             SELECT COUNT(*) as cantidad FROM cert_origen_documentos
             WHERE archivo = %s 
+              AND anulado = 'N'
             """
         
 
@@ -177,6 +179,7 @@ class DB:
             sentence_documento = f"""UPDATE cert_origen_documentos SET
                                      planificado_robot = 'S'
                                      WHERE nro_factura = %s
+                                       AND anulado = 'N'
                                      """
             with self.conn.cursor(dictionary=True) as cursor:
                 cursor.execute(sentence_tarea, [f"{parametros}"])
@@ -193,7 +196,7 @@ class DB:
                                 WHERE subido_a_dux = 'N'
                                   AND planificado_robot = 'N'
                                   AND total_factura = total_calculado
-
+                                  AND anulado = 'N'
                             """
         with self.conn.cursor(dictionary=True) as cursor:
             cursor.execute(sentence_facturas)
@@ -205,7 +208,7 @@ class DB:
         sentence_facturas = f"""SELECT nro_factura
                                   FROM cert_origen_documentos
                                 WHERE nro_factura = '{nro_factura}'
-
+                                  AND anulado = 'N'
                             """
         with self.conn.cursor(dictionary=True) as cursor:
             cursor.execute(sentence_facturas)
