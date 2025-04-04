@@ -230,3 +230,17 @@ class DB:
             resp = cursor.fetchone()
 
             return resp['cantidad_sin_operacion']
+    
+    def remitosSinOperacion(self):
+        sentence = f""" SELECT distinct nro_remito, fecha_remito, nro_factura, fecha_factura
+                          FROM cert_origen_facturacion
+                         WHERE numop = 0
+                           and fecha_remito >= CURDATE() - INTERVAL 20 DAY AND fecha_remito < CURDATE()
+                           AND anulado = 'N'
+                    """
+        with self.conn.cursor(dictionary=True) as cursor:
+            cursor.execute(sentence)
+
+            resp = cursor.fetchall()
+
+            return resp

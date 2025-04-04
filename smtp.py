@@ -28,7 +28,11 @@ class Smtp:
         message = MIMEMultipart("alternative")
         message["Subject"] = subject
         message["From"] = formataddr((self.sender_mail, self.user))
-        message["To"] = to
+        if isinstance(to, list):
+            message["To"] = ", ".join(to)
+        else:
+            message["To"] = to
+        
         if plain_message:
             part1 = MIMEText(plain_message, "plain")
             message.attach(part1)
@@ -58,6 +62,7 @@ class Smtp:
         with smtplib.SMTP_SSL(self.host, self.port, context=context) as self.server:
         #with smtplib.SMTP(self.host, 587) as self.server:
             self.server.login(self.user, self.password)
+            
             self.server.sendmail(self.user, to, message.as_string())
 config = config.Config()   
 smtp = Smtp( config.smtp_host , config.smtp_port ,
