@@ -235,7 +235,8 @@ class DB:
         sentence = f""" SELECT distinct nro_remito, fecha_remito, nro_factura, fecha_factura
                           FROM cert_origen_facturacion
                          WHERE numop = 0
-                           and fecha_remito >= CURDATE() - INTERVAL 30 DAY AND fecha_remito < CURDATE()
+                           and fecha_remito >= CURDATE() - INTERVAL 60 DAY AND fecha_remito < CURDATE()
+                           and fecha_remito >= '2025-04-01'
                            AND anulado = 'N'
                     """
         with self.conn.cursor(dictionary=True) as cursor:
