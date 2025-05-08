@@ -237,6 +237,7 @@ class DB:
                          WHERE numop = 0
                            and fecha_remito >= CURDATE() - INTERVAL 60 DAY AND fecha_remito < CURDATE()
                            and fecha_remito >= '2025-04-01'
+                           and facturar_flag = 'S'
                            AND anulado = 'N'
                     """
         with self.conn.cursor(dictionary=True) as cursor:
