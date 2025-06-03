@@ -45,13 +45,18 @@ def extraer_cabecera(pagina, texto_completo):
 
 def extraer_clave(clave, texto_area):
     patron = r'(' + '|'.join([clave]) + r')'
-    patrones = re.split(patron, texto_area)
+    #print(texto_area)
+    pattern = r'\d{1,3}(?:[.,]\d{3})*[.,]\d{2}\s*\n\s*Transporte\s*:\s*\n\s*\d{1,3}(?:[.,]\d{3})*[.,]\d{2}'
+
+# Elimina todas las apariciones del patrón en el texto
+    resultado = re.sub(pattern, '', texto_area)
+    patrones = re.split(patron, resultado)
     items = []
     for i  in range(1, len(patrones), 2):
         clave = patrones[i]
         contenido = patrones[i + 1] if i + 1 < len(patrones) else ""
         if clave == 'Certificado':
-            if "MERCOSUR COD" in contenido:
+            if "MERCOSUR COD" in contenido or "COLOMBIA COD" in contenido:
                 aux = contenido.strip().split('\n')
                 if len(aux) == 7:
                     lineas = [f"{aux[0]}", aux[1], aux[2], aux[3], aux[4], aux[5].strip(), aux[6].strip()]
