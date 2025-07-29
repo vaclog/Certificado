@@ -34,7 +34,12 @@ def extraer_informacion_pdf(ruta_pdf):
         texto_completo += pagina.get_text()
 
     # Expresiones regulares para buscar la información
-    
+    razon_social_objetivo = "RUGGERO VACCARI Y ASOCIADOS S A"
+    cuit_objetivo = "30-63840616-7"
+
+    if razon_social_objetivo not in texto_completo and cuit_objetivo not in texto_completo:
+        logging.info(f"Archivo ignorado. No coincide con razón social ni CUIT: {ruta_pdf}")
+        return None, None, []  # Devolver vacío para ignorar el archivo
 
     coordenadas_area_fecha = (310, 42, 510, 80) # Ajusta las coordenadas de acuerdo a tus necesidades
     x1, y1, x2, y2 = coordenadas_area_fecha
@@ -131,6 +136,9 @@ def main():
         
         for archivo in archivos_pdf:
             rx, fecha, certificados = extraer_informacion_pdf(archivo)
+            if rx is None:
+                mover_archivo(archivo, os.getenv('PROCESSED_FOLDER', ''))
+                continue
             print(f"Archivo: {archivo}")
             print(f"RX0001: {rx}")
             print(f"Primera Fecha: {fecha}")
