@@ -130,7 +130,7 @@ def main():
         start_time = util.show_time("Inicio")
         attachments_folder = os.getenv('ATTACHMENTS_FOLDER', '') 
         # Rutas a los archivos PDF (ajusta según sea necesario)
-        archivos_pdf = buscar_pdfs_con_nombre_similar(attachments_folder, patron="*RX*.pdf")
+        archivos_pdf = buscar_pdfs_con_nombre_similar(attachments_folder, patron="*.pdf")
         filas = []
         dbase = db.DB()
         
