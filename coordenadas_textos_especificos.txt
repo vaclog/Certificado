@@ -1,0 +1,4 @@
+Texto: '0002-00023627' | Coordenadas: (x: 786, y: 81, w: 195, h: 21)
+Texto: '02.01.2026' | Coordenadas: (x: 978, y: 206, w: 117, h: 12)
+Texto: '02.01.2026' | Coordenadas: (x: 978, y: 235, w: 117, h: 12)
+Texto: '4000012' | Coordenadas: (x: 199, y: 853, w: 53, h: 10)

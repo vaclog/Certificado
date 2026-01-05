@@ -222,6 +222,7 @@ class DB:
                           FROM cert_origen_facturacion
                          WHERE numop = 0
                            AND nro_factura = ?
+                           AND facturar_flag = 'S'
                            AND anulado = 'N'
                     """
         with self.conn.cursor(dictionary=True) as cursor:

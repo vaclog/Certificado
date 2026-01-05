@@ -1,3 +1,4 @@
+import datetime
 import traceback
 import inspect
 import fitz  # PyMuPDF
@@ -95,6 +96,9 @@ def save_attachments(imap_server, email_user, email_password, folder_to_save="at
                                         filename = filename.decode()
 
                                     # Save the file
+                                    name, ext = os.path.splitext(filename)
+                                    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+                                    filename = f"{name}_{timestamp}{ext}"
                                     filepath = os.path.join(folder_to_save, filename)
                                     with open(filepath, "wb") as f:
                                         f.write(part.get_payload(decode=True))
