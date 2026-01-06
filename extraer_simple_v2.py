@@ -175,7 +175,7 @@ def main():
 
             
             # Mover el archivo a la carpeta "procesados"
-            #mover_archivo(archivo, os.getenv('PROCESSED_FOLDER', ''))
+            mover_archivo(archivo, os.getenv('PROCESSED_FOLDER', ''))
         end_time = util.show_time("Fin")
         print(f"Tiempo de ejecución: {end_time - start_time}")
     except Exception as e:
