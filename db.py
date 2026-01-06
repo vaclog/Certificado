@@ -23,7 +23,6 @@ class DB:
         except Exception as e:
             print(traceback.format_exc())
             print(e)
-
     def CertificadoInsert(self, data):
         
         sentence=f"""
@@ -35,23 +34,25 @@ class DB:
                     """
 
         check_query = """
-            SELECT COUNT(*) FROM cert_origen_facturacion
-            WHERE nro_remito = %s 
-             AND anulado = 'N'
+            SELECT 1 FROM cert_origen_facturacion
+            WHERE nro_remito = %s
+              AND fecha_remito = %s
+              AND anulado = 'N'
+            
             """
        
 
         
         with self.conn.cursor(dictionary=True) as cursor:
             if ( len(data[2]) == 0 ):
-                check_query += " AND certificado = ''"
-                cursor.execute(check_query, (data[0], ))
+                check_query += " AND certificado = '' LIMIT 1"
+                cursor.execute(check_query, (data[0], data[1]))
             else:
-                check_query += " AND certificado = %s"
-                cursor.execute(check_query, (data[0], data[2]))
+                check_query += " AND certificado = %s LIMIT 1"
+                cursor.execute(check_query, (data[0], data[1], data[2]))
             
-            exists = cursor.fetchone()['COUNT(*)']
-            if exists== 0:
+            exists = cursor.fetchone()
+            if exists is None:
                 cursor.execute(sentence, data)
             
             self.conn.commit()
