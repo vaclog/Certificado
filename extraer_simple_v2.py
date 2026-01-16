@@ -61,15 +61,17 @@ def extraer_informacion_pdf(ruta_pdf):
                         )
 
     certificados_encontrados = []
+    
     if len(certificados) >= 1:
         for certificado in certificados:
-            partes = certificado.split('-')
-            if (len(partes) > 1):
-                valor = partes[1].strip()
-            else:
-                valor = partes[0].strip()
-            if valor:  # Esto verifica que no sea nulo o vacío
-                certificados_encontrados.append(valor)
+            for item in certificado.split(';'):
+                item = item.strip()
+                if not item:
+                    continue
+                partes = item.rsplit('-', 1)
+                valor = partes[1].strip() if len(partes) > 1 else partes[0].strip()
+                if valor:  # Esto verifica que no sea nulo o vacio
+                    certificados_encontrados.append(valor)
     
         
     documento.close()
