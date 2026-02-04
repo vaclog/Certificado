@@ -24,8 +24,8 @@ class DB:
             print(traceback.format_exc())
             print(e)
     def CertificadoInsert(self, data):
-        
-        sentence=f"""
+        try:
+            sentence=f"""
                     INSERT INTO cert_origen_facturacion (
                                 nro_remito, fecha_remito, certificado, 
                                 fecha_alta, user_id_last_update, 
@@ -33,29 +33,33 @@ class DB:
                                 ) VALUES (%s, %s, %s, %s, %s, 'S')
                     """
 
-        check_query = """
-            SELECT 1 FROM cert_origen_facturacion
-            WHERE nro_remito = %s
-              AND fecha_remito = %s
-              AND anulado = 'N'
+            check_query = """
+                SELECT 1 FROM cert_origen_facturacion
+                WHERE nro_remito = %s
+                AND fecha_remito = %s
+                AND anulado = 'N'
             
-            """
+                """
        
 
         
-        with self.conn.cursor(dictionary=True) as cursor:
-            if ( len(data[2]) == 0 ):
-                check_query += " AND certificado = '' LIMIT 1"
-                cursor.execute(check_query, (data[0], data[1]))
-            else:
-                check_query += " AND certificado = %s LIMIT 1"
-                cursor.execute(check_query, (data[0], data[1], data[2]))
-            
-            exists = cursor.fetchone()
-            if exists is None:
-                cursor.execute(sentence, data)
-            
-            self.conn.commit()
+            with self.conn.cursor(dictionary=True) as cursor:
+                if ( len(data[2]) == 0 ):
+                    check_query += " AND certificado = '' LIMIT 1"
+                    cursor.execute(check_query, (data[0], data[1]))
+                else:
+                    check_query += " AND certificado = %s LIMIT 1"
+                    cursor.execute(check_query, (data[0], data[1], data[2]))
+                
+                exists = cursor.fetchone()
+                if exists is None:
+                    cursor.execute(sentence, data)
+                
+                self.conn.commit()
+        except Exception as e:
+            print(traceback.format_exc())
+            print(e)
+
     def agregarRemitoNoEncontrado(self, lista, valor):
         """
         Agrega un valor a la lista si no existe ya en ella.

@@ -41,7 +41,7 @@ def extraer_informacion_pdf(ruta_pdf):
         logging.info(f"Archivo ignorado. No coincide con razón social ni CUIT: {ruta_pdf}")
         return None, None, []  # Devolver vacío para ignorar el archivo
 
-    coordenadas_area_fecha = (310, 42, 800, 100) # Ajusta las coordenadas de acuerdo a tus necesidades
+    coordenadas_area_fecha = (310, 42, 800, 200) # Ajusta las coordenadas de acuerdo a tus necesidades
     x1, y1, x2, y2 = coordenadas_area_fecha
     area_fecha = fitz.Rect(x1, y1, x2, y2)  
     texto_area = pagina.get_textbox(area_fecha)
