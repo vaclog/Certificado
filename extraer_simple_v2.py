@@ -144,7 +144,7 @@ def main():
         # Rutas a los archivos PDF (ajusta según sea necesario)
         archivos_pdf = buscar_pdfs_con_nombre_similar(
             attachments_folder,
-            patron=[ "*Entrega*.pdf"]
+            patron=[ "*Entrega*.pdf", "*.pdf"]
         )
         filas = []
         dbase = db.DB()
