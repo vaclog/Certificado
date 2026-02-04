@@ -35,9 +35,9 @@ def extraer_informacion_pdf(ruta_pdf):
 
     # Expresiones regulares para buscar la información
     razon_social_objetivo = "RUGGERO VACCARI Y ASOCIADOS S A"
-    cuit_objetivo = "30-63840616-7"
+    cuit_objetivo = "30638406167"
 
-    if razon_social_objetivo not in texto_completo and cuit_objetivo not in texto_completo:
+    if razon_social_objetivo not in texto_completo or cuit_objetivo not in texto_completo:
         logging.info(f"Archivo ignorado. No coincide con razón social ni CUIT: {ruta_pdf}")
         return None, None, []  # Devolver vacío para ignorar el archivo
 
