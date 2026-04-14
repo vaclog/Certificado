@@ -1,5 +1,6 @@
 import smtplib, ssl
 import config
+import re
 
 from email.mime.text import MIMEText
 from email import encoders
@@ -22,23 +23,31 @@ class Smtp:
         print(host)
         
             
+    def _normalize_recipients(self, to):
+        if isinstance(to, list):
+            recipients = to
+        else:
+            recipients = re.split(r'[;,]', str(to or ''))
+
+        return [recipient.strip() for recipient in recipients if recipient and recipient.strip()]
+
     def SendMail(self, to, subject, plain_message="", html_message="<html></html>", imagename=""):
         context = ssl.create_default_context()
+        recipients = self._normalize_recipients(to)
+        if not recipients:
+            raise ValueError('No hay destinatarios configurados para el correo.')
         
         message = MIMEMultipart("alternative")
         message["Subject"] = subject
         message["From"] = formataddr((self.sender_mail, self.user))
-        if isinstance(to, list):
-            message["To"] = ", ".join(to)
-        else:
-            message["To"] = to
+        message["To"] = ", ".join(recipients)
         
         if plain_message:
-            part1 = MIMEText(plain_message, "plain")
+            part1 = MIMEText(plain_message, "plain", "utf-8")
             message.attach(part1)
 
         if html_message:
-            part2 = MIMEText(html_message, "html")
+            part2 = MIMEText(html_message, "html", "utf-8")
             message.attach(part2)   
         
         # part1=MIMEText(text, 'plain')
@@ -63,7 +72,7 @@ class Smtp:
         #with smtplib.SMTP(self.host, 587) as self.server:
             self.server.login(self.user, self.password)
             
-            self.server.sendmail(self.user, to, message.as_string())
+            self.server.sendmail(self.user, recipients, message.as_string())
 config = config.Config()   
 smtp = Smtp( config.smtp_host , config.smtp_port ,
             config.smtp_user , config.smtp_password, config.sender_mail )

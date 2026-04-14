@@ -27,6 +27,28 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
+def decode_mime_value(value):
+    if not value:
+        return ""
+
+    decoded_parts = []
+    for part, encoding in decode_header(value):
+        if isinstance(part, bytes):
+            for candidate in [encoding, "utf-8", "latin-1", "cp1252"]:
+                if not candidate:
+                    continue
+                try:
+                    decoded_parts.append(part.decode(candidate))
+                    break
+                except (UnicodeDecodeError, LookupError):
+                    continue
+            else:
+                decoded_parts.append(part.decode("utf-8", errors="replace"))
+        else:
+            decoded_parts.append(part)
+
+    return "".join(decoded_parts)
+
 def preparar_search_criteria(subject_filter):
     filters = [f.strip() for f in subject_filter.split(',') if f.strip()]
 
@@ -75,11 +97,10 @@ def save_attachments(imap_server, email_user, email_password, folder_to_save="at
                 if isinstance(response_part, tuple):
                     # Parse a byte email into a message object
                     msg = email.message_from_bytes(response_part[1])
+                    email_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
 
                     # Decode email subject (if needed)
-                    subject, encoding = decode_header(msg["Subject"])[0]
-                    if isinstance(subject, bytes):
-                        subject = subject.decode(encoding if encoding else "utf-8")
+                    subject = decode_mime_value(msg["Subject"])
                     print(f"Subject: {subject}")
 
                     # If the email has attachments
@@ -91,14 +112,11 @@ def save_attachments(imap_server, email_user, email_password, folder_to_save="at
                                 filename = part.get_filename()
                                 if filename:
                                     # Decode the filename if needed
-                                    filename = decode_header(filename)[0][0]
-                                    if isinstance(filename, bytes):
-                                        filename = filename.decode()
+                                    filename = decode_mime_value(filename)
 
                                     # Save the file
                                     name, ext = os.path.splitext(filename)
-                                    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
-                                    filename = f"{name}_{timestamp}{ext}"
+                                    filename = f"{name}_{email_timestamp}{ext}"
                                     filepath = os.path.join(folder_to_save, filename)
                                     with open(filepath, "wb") as f:
                                         f.write(part.get_payload(decode=True))

@@ -1,283 +1,584 @@
-import traceback
 import inspect
-import fitz  # PyMuPDF
-import re
-from dotenv import load_dotenv
-import os
 import logging
-import fnmatch
+import os
+import re
 import shutil
-import pandas as pd
-from datetime import datetime
+import traceback
+from collections import defaultdict
+from datetime import date, datetime
+
+from dotenv import load_dotenv
+from openpyxl import load_workbook
+
 import db
-import util
 import smtp
+import util
 
 load_dotenv()
 
-log_level = os.getenv('LOG_LEVEL', 'INFO')  # Valor por defecto 'INFO' si no está definido
-
-# Configurar el nivel de logging dinámicamente
+log_level = os.getenv('LOG_LEVEL', 'INFO')
 numeric_level = getattr(logging, log_level.upper(), logging.INFO)
 
 logging.basicConfig(
-    level=numeric_level,  # Nivel de registro mínimo que quieres mostrar
+    level=numeric_level,
     format='%(asctime)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
 
+REQUIRED_COLUMNS = {
+    'factura_oficial': ['factura oficial'],
+    'fecha_factura': ['fecha facura', 'fecha factura'],
+    'remito': ['remito'],
+    'numero_serie': ['numero de serie'],
+    'total_pedido': ['total pedido'],
+    'nombre_material': ['nombre material'],
+}
 
 
-def extraer_cabecera(pagina, texto_completo):
-    coordenadas_area_fecha = (310, 42, 510, 80) # Ajusta las coordenadas de acuerdo a tus necesidades
-    x1, y1, x2, y2 = coordenadas_area_fecha
-    area_fecha = fitz.Rect(x1, y1, x2, y2)  
-    texto_area = pagina.get_textbox(area_fecha)
+class ExcelRowError(util.PDFInconsistente):
+    def __init__(self, message, archivo, hoja=None, fila=None, factura=None):
+        super().__init__(message)
+        self.archivo = archivo
+        self.hoja = hoja
+        self.fila = fila
+        self.factura = factura
 
-    rx_valor = re.search(r'\b\s*(\d{4}-\d+)', texto_area)
-    rx_encontrado = rx_valor.group(1) if rx_valor else "No encontrado"
-    fecha = re.search(r'\d{1,2}/\d{1,2}/\d{4}', texto_area)
-    fechas = re.findall(r'\d{1,2}/\d{1,2}/\d{4}', texto_completo)
-    fecha_encontrada = fecha.group() if fecha else "No encontrado"
+    def describe(self):
+        parts = [f'archivo={self.archivo}']
+        if self.hoja is not None:
+            parts.append(f'hoja={self.hoja}')
+        if self.fila is not None:
+            parts.append(f'fila={self.fila}')
+        if self.factura is not None:
+            parts.append(f'factura={self.factura}')
+        parts.append(f'detalle={self.args[0]}')
+        return ' | '.join(parts)
 
-    return rx_encontrado, fecha_encontrada
 
-def extraer_clave(clave, texto_area):
-    patron = r'(' + '|'.join([clave]) + r')'
-    #print(texto_area)
-    pattern = r'\d{1,3}(?:[.,]\d{3})*[.,]\d{2}\s*\n\s*Transporte\s*:\s*\n\s*\d{1,3}(?:[.,]\d{3})*[.,]\d{2}'
+def normalize_header(value):
+    if value is None:
+        return ''
+    return ' '.join(str(value).strip().lower().split())
 
-# Elimina todas las apariciones del patrón en el texto
-    resultado = re.sub(pattern, '', texto_area)
-    patrones = re.split(patron, resultado)
-    items = []
-    for i  in range(1, len(patrones), 2):
-        clave = patrones[i]
-        contenido = patrones[i + 1] if i + 1 < len(patrones) else ""
-        if clave == 'Certificado':
-            if "MERCOSUR COD" in contenido or "COLOMBIA COD" in contenido:
-                aux = contenido.strip().split('\n')
-                if len(aux) == 7:
-                    lineas = [f"{aux[0]}", aux[1], aux[2], aux[3], aux[4], aux[5].strip(), aux[6].strip()]
-                elif (len(aux) == 8):
-                    lineas = [f"{aux[0]}{aux[1]}", aux[2], aux[3], aux[4], aux[5], aux[6].strip(), aux[7]]
 
-                elif (len(aux)  >= 9):
-                    lineas = [f"{aux[0]}", aux[1], aux[2], aux[3], aux[4], aux[5].strip(), aux[6].strip()]
-            else:
-                lineas = contenido.strip().split('\n')[:7]
+def find_required_columns(headers):
+    index_by_header = {normalize_header(header): idx for idx, header in enumerate(headers)}
+    resolved = {}
+    missing = []
+
+    for logical_name, aliases in REQUIRED_COLUMNS.items():
+        idx = next((index_by_header[alias] for alias in aliases if alias in index_by_header), None)
+        if idx is None:
+            missing.append('/'.join(aliases))
         else:
-            if clave == 'Block':
-                aux = contenido.strip().split('\n')[:10]
-                lineas = [f"{clave} {aux[0]}", aux[1], aux[2], aux[3], aux[4],  '',  aux[5]]
-            else:
-                lineas = contenido.strip().split('\n')[:5]
-                lineas.insert(0, clave)
-                lineas.insert(5, '')
-        
-        items.append(lineas) 
-    return items
-def extraer_informacion_pdf(ruta_pdf):
-    # Abrir el archivo PDF
-    documento = fitz.open(ruta_pdf)
-    texto_completo = ""
-    items = []
-    texto_documento = ""
-    for pagina in documento:
+            resolved[logical_name] = idx
 
-        texto_completo = pagina.get_text()
-        texto_documento += texto_completo
-        rx_encontrado, fecha_encontrada = extraer_cabecera(pagina, texto_completo)
-        items_pattern = r"CANT.(.*?)TOTAL:"
-        coordenadas_area_items = (10, 300, 800, 1200)
-        x1, y1, x2, y2 = coordenadas_area_items
-        area_items = fitz.Rect(x1, y1, x2, y2)  
-        texto_area = pagina.get_textbox(area_items)
+    if missing:
+        raise util.PDFInconsistente(
+            f'No se encontraron columnas obligatorias: {", ".join(missing)}'
+        )
 
-        claves = ['Block', 'Certificado', 'VISADOS', ]
+    return resolved
 
-        for clave in claves:
-            items.extend(extraer_clave( clave, texto_area))
-    patron = r'TOTAL:\s*([\s\S]*?)(\d{1,3}(?:[.,]\d{3})*[.,]\d{2})'
-    total = re.search(patron, texto_documento)
-    total_value = None
-    if total is None:
-        raise util.PDFInconsistente("No se pudo encontrar el TOTAL: en el PDF.")
+
+def format_excel_date(value):
+    if isinstance(value, datetime):
+        return value.strftime('%Y-%m-%d')
+    if isinstance(value, date):
+        return value.strftime('%Y-%m-%d')
+    if value is None or str(value).strip() == '':
+        return None
+
+    raw_value = str(value).strip()
+    for fmt in ('%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y'):
+        try:
+            return datetime.strptime(raw_value, fmt).strftime('%Y-%m-%d')
+        except ValueError:
+            continue
+
+    raise util.PDFInconsistente(f'Fecha de factura inválida: {raw_value}')
+
+
+def normalize_factura(value):
+    if value is None or str(value).strip() == '':
+        raise util.PDFInconsistente('La factura oficial está vacía.')
+
+    factura = re.sub(r'\s+', '', str(value).strip())
+    if 'C' in factura.upper():
+        left, right = re.split(r'[cC]', factura, maxsplit=1)
+    elif '-' in factura:
+        left, right = factura.split('-', 1)
     else:
-        total_value = util.convert_decimal_from_spanish_to_english_format(total.group(2))
-    
-    documento.close()   
+        digits = re.sub(r'\D', '', factura)
+        if len(digits) < 12:
+            raise util.PDFInconsistente(f'Formato de factura inválido: {factura}')
+        left, right = digits[:-8], digits[-8:]
 
-    return rx_encontrado, fecha_encontrada, total_value, items
+    left_digits = re.sub(r'\D', '', left)
+    right_digits = re.sub(r'\D', '', right)
+    if not left_digits or not right_digits:
+        raise util.PDFInconsistente(f'Formato de factura inválido: {factura}')
+
+    return f'{left_digits.zfill(4)}-{right_digits.zfill(8)}'
 
 
-def buscar_pdfs_con_nombre_similar(directorio, patron="CAC01005448-ORG-RX0001-*.pdf"):
-    """
-    Busca archivos PDF en un directorio cuyo nombre coincida con un patrón dado.
+def extract_nro_remito(value):
+    if value is None or str(value).strip() == '':
+        raise util.PDFInconsistente('El remito está vacío.')
 
-    Parámetros:
-    - directorio (str): Ruta del directorio donde buscar los archivos.
-    - patron (str): Patrón de búsqueda para coincidir con los nombres de archivo (por defecto busca nombres similares a "CAC01005448-ORG-RX0001-*.pdf").
+    remito = str(value).strip().upper()
+    match = re.search(r'R(\d+)$', remito)
+    if match:
+        return int(match.group(1))
 
-    Retorna:
-    - List[str]: Una lista de rutas completas a los archivos que coinciden con el patrón.
-    """
-    archivos_pdf = []
-    # Recorre los archivos en el directorio especificado
+    digits = re.findall(r'\d+', remito)
+    if digits:
+        return int(digits[-1])
+
+    raise util.PDFInconsistente(f'No se pudo extraer el número de remito desde: {value}')
+
+
+def to_float(value):
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    if value is None or str(value).strip() == '':
+        raise util.PDFInconsistente('Total Pedido vacío.')
+
+    normalized = str(value).strip()
+    return float(util.convert_decimal_from_spanish_to_english_format(normalized))
+
+
+def expand_range_token(token):
+    start_text, end_text = [part.strip() for part in token.split('/', 1)]
+    start_text = util.normalizar_numero_certificado(start_text)
+    end_text = util.normalizar_numero_certificado(end_text)
+    if not start_text or not end_text or not start_text.isdigit() or not end_text.isdigit():
+        return [token]
+
+    start = int(start_text)
+    end = int(end_text)
+    if end < start:
+        raise util.PDFInconsistente(f'Rango de certificados inválido: {token}')
+
+    width = max(len(start_text), len(end_text))
+    return [str(number).zfill(width) for number in range(start, end + 1)]
+
+
+def parse_certificados(value):
+    if value is None or str(value).strip() == '':
+        return ['']
+
+    certificados = []
+    for token in str(value).split(','):
+        token = token.strip()
+        if not token:
+            continue
+        if '/' in token:
+            certificados.extend(expand_range_token(token))
+        else:
+            certificados.append(util.normalizar_numero_certificado(token))
+
+    if not certificados:
+        return ['']
+
+    return certificados
+
+
+def extraer_facturas_desde_xlsx(ruta_xlsx):
+    archivo = os.path.basename(ruta_xlsx)
+    workbook = load_workbook(ruta_xlsx, data_only=True)
+    facturas = defaultdict(lambda: {
+        'fecha_factura': None,
+        'total_factura': 0.0,
+        'values': [],
+        'source_file': archivo,
+    })
+
+    for worksheet in workbook.worksheets:
+        rows = list(worksheet.iter_rows(values_only=True))
+        if len(rows) < 2:
+            logging.info(
+                'Excel sin filas procesables | archivo=%s | hoja=%s',
+                archivo,
+                worksheet.title,
+            )
+            continue
+
+        non_empty_row_numbers = [
+            row_number
+            for row_number, row in enumerate(rows[1:], start=2)
+            if any(row)
+        ]
+        last_data_row = non_empty_row_numbers[-1] if non_empty_row_numbers else None
+
+        try:
+            columns = find_required_columns(rows[0])
+        except util.PDFInconsistente as exc:
+            raise ExcelRowError(str(exc), archivo, hoja=worksheet.title, fila=1) from exc
+
+        for row_number, row in enumerate(rows[1:], start=2):
+            if not any(row):
+                logging.info(
+                    'Fila vacia ignorada | archivo=%s | hoja=%s | fila=%s',
+                    archivo,
+                    worksheet.title,
+                    row_number,
+                )
+                continue
+
+            try:
+                nro_factura = normalize_factura(row[columns['factura_oficial']])
+                fecha_factura = format_excel_date(row[columns['fecha_factura']])
+                nro_remito = extract_nro_remito(row[columns['remito']])
+                tipo = str(row[columns['nombre_material']]).strip()
+                total_pedido = to_float(row[columns['total_pedido']])
+                certificados = parse_certificados(row[columns['numero_serie']])
+            except util.PDFInconsistente as exc:
+                if row_number == last_data_row:
+                    logging.warning(
+                        'Ultima fila inconsistente ignorada | archivo=%s | hoja=%s | fila=%s | detalle=%s',
+                        archivo,
+                        worksheet.title,
+                        row_number,
+                        str(exc),
+                    )
+                    continue
+                raise ExcelRowError(
+                    str(exc),
+                    archivo,
+                    hoja=worksheet.title,
+                    fila=row_number,
+                ) from exc
+
+            cantidad_certificados = len(certificados)
+            if cantidad_certificados == 0:
+                if row_number == last_data_row:
+                    logging.warning(
+                        'Ultima fila inconsistente ignorada | archivo=%s | hoja=%s | fila=%s | detalle=%s',
+                        archivo,
+                        worksheet.title,
+                        row_number,
+                        'No se pudieron obtener certificados.',
+                    )
+                    continue
+                raise ExcelRowError(
+                    'No se pudieron obtener certificados.',
+                    archivo,
+                    hoja=worksheet.title,
+                    fila=row_number,
+                    factura=nro_factura,
+                )
+
+            precio_unitario = total_pedido / cantidad_certificados
+            fecha_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            factura = facturas[nro_factura]
+
+            if factura['fecha_factura'] is None:
+                factura['fecha_factura'] = fecha_factura
+            elif factura['fecha_factura'] != fecha_factura:
+                if row_number == last_data_row:
+                    logging.warning(
+                        'Ultima fila inconsistente ignorada | archivo=%s | hoja=%s | fila=%s | detalle=%s',
+                        archivo,
+                        worksheet.title,
+                        row_number,
+                        'La factura tiene mas de una fecha en el workbook.',
+                    )
+                    continue
+                raise ExcelRowError(
+                    'La factura tiene más de una fecha en el workbook.',
+                    archivo,
+                    hoja=worksheet.title,
+                    fila=row_number,
+                    factura=nro_factura,
+                )
+
+            factura['total_factura'] += total_pedido
+            logging.info(
+                'Fila procesada | archivo=%s | hoja=%s | fila=%s | factura=%s | remito=%s | certificados=%s | total_pedido=%.2f | precio_unitario=%.2f | tipo=%s',
+                archivo,
+                worksheet.title,
+                row_number,
+                nro_factura,
+                nro_remito,
+                certificados,
+                total_pedido,
+                precio_unitario,
+                tipo,
+            )
+
+            for certificado in certificados:
+                factura['values'].append([
+                    nro_remito,
+                    certificado,
+                    fecha_factura,
+                    nro_factura,
+                    precio_unitario,
+                    fecha_update,
+                    'proceso de facturación',
+                    tipo,
+                ])
+
+    return facturas
+
+
+def buscar_xlsx(directorio):
+    if not os.path.isdir(directorio):
+        return []
+
+    archivos = []
     for archivo in os.listdir(directorio):
-        if fnmatch.fnmatch(archivo, patron):
-            # Agrega la ruta completa del archivo a la lista
-            archivos_pdf.append(os.path.join(directorio, archivo))
-    return archivos_pdf
+        if archivo.lower().endswith('.xlsx'):
+            archivos.append(os.path.join(directorio, archivo))
+    return sorted(archivos)
 
 
 def mover_archivo(nombre_archivo, directorio_destino):
-    """
-    Mueve un archivo a un directorio específico.
-
-    Parámetros:
-    - nombre_archivo (str): Ruta completa del archivo que deseas mover.
-    - directorio_destino (str): Ruta del directorio destino.
-
-    Retorna:
-    - str: Ruta completa del archivo movido en el nuevo directorio.
-    """
-    # Verifica si el archivo existe
     if not os.path.isfile(nombre_archivo):
         raise FileNotFoundError(f"El archivo '{nombre_archivo}' no existe.")
-    
-    # Verifica si el directorio destino existe, si no, lo crea
+
     if not os.path.exists(directorio_destino):
         os.makedirs(directorio_destino)
 
-    # Construye la ruta del nuevo archivo
     nombre_archivo_nuevo = os.path.join(directorio_destino, os.path.basename(nombre_archivo))
-
-    # Mueve el archivo
     shutil.move(nombre_archivo, nombre_archivo_nuevo)
-
     return nombre_archivo_nuevo
 
 
-def convertir_fecha(fecha_str):
-    try:
-        # Separar la fecha en partes
-        dia, mes, anio = fecha_str.split('/')
-        # Formatear la fecha en 'yyyy-mm-dd'
-        return f"{anio}-{mes}-{dia}"
-    except ValueError:
-        return "Formato de fecha inválido"
+def build_html_inconsistencia(
+    nro_factura,
+    archivo,
+    detalle,
+    remitos_no_encontrados=None,
+    certificados_no_encontrados=None,
+    total_factura=None,
+    total_calculado=None,
+):
+    remitos_html = ''
+    if remitos_no_encontrados:
+        remitos_html = f"""
+        <p>Los siguientes Remitos no fueron encontrados en la base de datos de certificados de origen:</p>
+        <ul>
+            {''.join([f'<li>{remito}</li>' for remito in remitos_no_encontrados])}
+        </ul>
+        """
 
+    certificados_html = ''
+    if certificados_no_encontrados:
+        certificados_html = f"""
+        <p>Los siguientes certificados no fueron encontrados en la base de datos de certificados de origen:</p>
+        <ul>
+            {''.join([f"<li>Remito {item['nro_remito']} | Certificado {item['certificado'] or '(vacio)'}</li>" for item in certificados_no_encontrados])}
+        </ul>
+        """
+
+    total_html = ''
+    if total_factura is not None and total_calculado is not None:
+        total_html = f"""
+        <p>El total de la factura no coincide con el total calculado:</p>
+        <ul>
+            <li>Total factura: {total_factura}</li>
+            <li>Total calculado: {total_calculado}</li>
+        </ul>
+        """
+
+    return f"""<html>
+    <body>
+        <p>Para la factura: <strong>{nro_factura}</strong></p>
+        <p>del archivo: {archivo}</p>
+        <p>{detalle}</p>
+        {remitos_html}
+        {certificados_html}
+        {total_html}
+        <p>Por favor reenviar los datos a la casilla <strong>{os.getenv('EMAIL_USER', '')}</strong> para su procesamiento</p>
+    </body>
+    </html>"""
+
+
+def normalize_mail_recipients(value):
+    if isinstance(value, list):
+        recipients = value
+    else:
+        recipients = re.split(r'[;,]', str(value or ''))
+
+    return [recipient.strip() for recipient in recipients if recipient and recipient.strip()]
+
+
+def html_to_plain_text(value):
+    if not value:
+        return ''
+
+    if not value.lstrip().startswith('<'):
+        return value
+
+    text = re.sub(r'<li>\s*', '- ', value, flags=re.IGNORECASE)
+    text = re.sub(r'<[^>]+>', '\n', text)
+    text = re.sub(r'[ \t]+\n', '\n', text)
+    text = re.sub(r'\n{2,}', '\n', text)
+    return text.strip()
+
+
+def safe_send_mail(to, subject, plain_message, html_message):
+    recipients = normalize_mail_recipients(to)
+    fallback = normalize_mail_recipients(os.getenv('EMAIL_TICKETS', ''))
+    if not recipients and fallback:
+        recipients = fallback
+        logging.warning(
+            'EMAIL_ADMINISTRACION vacio. Se usa EMAIL_TICKETS como fallback | subject=%s',
+            subject,
+        )
+
+    if not recipients:
+        print(f'No hay destinatarios configurados para enviar el correo: {subject}')
+        logging.error('No hay destinatarios configurados para enviar el correo | subject=%s', subject)
+        return False
+
+    if html_message and (not plain_message or plain_message.lstrip().startswith('<')):
+        plain_message = html_to_plain_text(html_message)
+
+    try:
+        smtp.smtp.SendMail(recipients, subject, plain_message, html_message, '')
+        logging.info('Correo enviado | to=%s | subject=%s', recipients, subject)
+        return True
+    except Exception:
+        print(f'Fallo al enviar email | to={recipients} | subject={subject}')
+        logging.exception('Fallo al enviar email | to=%s | subject=%s', recipients, subject)
+        return False
+
+
+def procesar_factura(dbase, archivo, nro_factura, data_factura):
+    total_factura = round(data_factura['total_factura'], 2)
+    total_calculado, remitos_no_encontrados, certificados_no_encontrados = dbase.CertificadoFactura(
+        data_factura['values'],
+        total_factura
+    )
+    total_calculado = round(total_calculado, 2)
+
+    print(f'Factura: {nro_factura}')
+    print(f'Total factura: {total_factura}')
+    print(f'Total calculado: {total_calculado}')
+    print(f'Remitos no encontrados: {remitos_no_encontrados}')
+    print(f'Certificados no encontrados: {certificados_no_encontrados}')
+    logging.info(
+        'Factura procesada | archivo=%s | factura=%s | items=%s | total_factura=%.2f | total_calculado=%.2f | remitos_no_encontrados=%s | certificados_no_encontrados=%s',
+        archivo,
+        nro_factura,
+        len(data_factura['values']),
+        total_factura,
+        total_calculado,
+        remitos_no_encontrados,
+        certificados_no_encontrados,
+    )
+
+    dbase.CertificadoDocumentoInsertOrUpdate([
+        nro_factura,
+        nro_factura,
+        total_factura,
+        total_calculado,
+    ])
+
+    if remitos_no_encontrados or certificados_no_encontrados:
+        raise util.PDFInconsistente(
+            build_html_inconsistencia(
+                nro_factura,
+                archivo,
+                'Se encontraron remitos o certificados que no existen en la tabla de certificados.',
+                remitos_no_encontrados=remitos_no_encontrados,
+                certificados_no_encontrados=certificados_no_encontrados,
+            )
+        )
+
+    if total_factura != total_calculado:
+        raise util.PDFInconsistente(
+            build_html_inconsistencia(
+                nro_factura,
+                archivo,
+                'El total de la factura no coincide con el total calculado.',
+                total_factura=total_factura,
+                total_calculado=total_calculado,
+            )
+        )
 
 
 def main():
-
+    archivo = ''
     try:
-        start_time = util.show_time("Inicio")
-        attachments_folder = os.getenv('ATTACHMENTS_FOLDER', '') 
-        # Rutas a los archivos PDF (ajusta según sea necesario)
-        archivos_pdf = buscar_pdfs_con_nombre_similar(attachments_folder, patron="*FC*-*.pdf")
-        filas = []
+        start_time = util.show_time('Inicio')
+        attachments_folder = os.getenv('ATTACHMENTS_FOLDER', '')
+        archivos_xlsx = buscar_xlsx(attachments_folder)
         dbase = db.DB()
-        
-        for archivo in archivos_pdf:
+
+        for archivo in archivos_xlsx:
             try:
-                rx, fecha, total, certificados = extraer_informacion_pdf(archivo)
-                print(f"Archivo: {archivo}")
-                print(f"FACTURA: {rx}")
-                print(f"Fecha: {fecha}")
-                fecha_factura = convertir_fecha(fecha)  # Convertir la fecha
-                nro_factura = rx
-                total_calculado = 0
-                values = []
-                print("-" * 40)
-                ##if dbase.existeFactura(nro_factura):
-                ##    print(f"La factura {nro_factura} ya existe en la base de datos.")
-                ##else:
-                for certificado in certificados:
-                    #print(f"Certificados: {expandir_rango(certificado[5])}")  # Expandir el rango de certificados y mostrarlos separados por comascertificados}")
-                    print(certificado)
-                    tipo = certificado[0]
-                    cant = int(certificado[1])
-                    total_calculado += util.convert_decimal_from_spanish_to_english_format  (certificado[2])
-                    
-                    subtotal = util.convert_decimal_from_spanish_to_english_format(certificado[2])
-                    precio_unitario = util.convert_decimal_from_spanish_to_english_format(certificado[3])
-                    cert=certificado[5].strip()
-                    nro_remito = int(certificado[6].split('-')[1].strip()) if isinstance(certificado[6], str) and '-' in certificado[6].split('-')[0].strip() else   certificado[6].split('-')[1].strip()
-                    if tipo == 'VISADOS' or 'Block' in tipo:
-                        precio_unitario = precio_unitario * cant
-                    
-                    if cert == '':
-                        fecha_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        
-                        values.append([nro_remito, cert, fecha_factura, nro_factura, precio_unitario, fecha_update,'proceso de facturación', tipo])
-                    for ce in util.expandir_rango(cert):
-                        fecha_update = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        
-                        values.append([nro_remito, ce, fecha_factura, nro_factura, precio_unitario, fecha_update,'proceso de facturación', tipo])
+                print(f'Archivo: {archivo}')
+                logging.info('Inicio archivo Excel | archivo=%s', os.path.basename(archivo))
+                facturas = extraer_facturas_desde_xlsx(archivo)
+                if not facturas:
+                    raise util.PDFInconsistente('El archivo no contiene filas procesables.')
 
-                    
-                
-                
-                total_calculado, remitos_no_encontrados = dbase.CertificadoFactura(values, total)
-                print(f"Total: {total}")
-                print(f"Remitos no encontrados: {remitos_no_encontrados}")
-                dbase.CertificadoDocumentoInsertOrUpdate([os.path.basename(archivo), nro_factura,  total, total_calculado])
-                
-                if len(remitos_no_encontrados) > 0:
-                    html_msg_admin = f"""<html>
-                    <body>
-                        <p>Para la factura: <strong>{nro_factura}</strong></p
-                        <p>del archivo: {os.path.basename(archivo)}</p>
-                        <p>Los siguientes Remitos no fueron encontrados en la base de datos de certificados de orgien:</p>
-                        <ul>
-                            {''.join([f'<li>{remito}</li>' for remito in remitos_no_encontrados])}
-                        </ul>
-                        <p>Por favor reenviar los mails con los remitos a la casilla <strong>{os.getenv('EMAIL_USER', '')}</strong> para su procesamiento</p>
+                for nro_factura, data_factura in facturas.items():
+                    procesar_factura(dbase, os.path.basename(archivo), nro_factura, data_factura)
 
-                    </body>
-                    </html>"""
-                    raise util.PDFInconsistente(f"Los remitos no fueron encontrados para la factura {nro_factura}.")
-                # Mover el archivo a la carpeta "procesados"
-                
-                if total != total_calculado:
-                    html_msg_admin = f"""<html>
-                    <body>
-                        <p>Para la factura: <strong>{nro_factura}</strong></p
-                        <p>del archivo: {os.path.basename(archivo)}</p>
-                        <p>El total en el PDF no coincide con el total calculado:</p>
-                        <ul>
-                            <li>Total PDF: {total}</li>
-                            <li>Total Calculado: {total_calculado}</li>
-                        </ul>
-                        <p>Por favor reenviar los mails con los remitos a la casilla <strong>{os.getenv('EMAIL_USER', '')}</strong> para su procesamiento</p>
-
-                    </body>
-                    </html>"""
-                    
-                    raise util.PDFInconsistente("El total en el PDF no coincide con el total calculado.")
-                else:
-                    mover_archivo(archivo, os.getenv('PROCESSED_FOLDER', ''))
-                    
+                mover_archivo(archivo, os.getenv('PROCESSED_FOLDER', ''))
+                logging.info('Archivo movido a procesados | archivo=%s', os.path.basename(archivo))
+            except ExcelRowError as e:
+                detalle = e.describe()
+                print(f'Error: {detalle}')
+                logging.error('Error de fila Excel | %s', detalle)
+                html_msg_admin = build_html_inconsistencia(
+                    e.factura or 'sin factura',
+                    e.archivo,
+                    detalle,
+                )
+                safe_send_mail(
+                    os.getenv('EMAIL_ADMINISTRACION', ''),
+                    f'Inconsistencia en Excel de Factura CAC ce Cert Origen {os.path.basename(archivo)}',
+                    detalle,
+                    html_msg_admin,
+                )
             except util.PDFInconsistente as e:
-                
-                print(f"Error: {e}")
-                smtp.smtp.SendMail(os.getenv('EMAIL_ADMINISTRACION', ''), f"Inconsistencia en procesar Factura CAC ce Cert Origen {nro_factura}", f"{e}", html_msg_admin, "")
-        end_time = util.show_time("Fin")
-        print(f"Tiempo de ejecución: {end_time - start_time}")
-    
-        
+                detalle = str(e)
+                print(f'Error: {detalle}')
+                logging.error('Error de negocio | archivo=%s | detalle=%s', os.path.basename(archivo), detalle)
+                safe_send_mail(
+                    os.getenv('EMAIL_ADMINISTRACION', ''),
+                    f'Inconsistencia en procesar Factura CAC ce Cert Origen {os.path.basename(archivo)}',
+                    detalle,
+                    detalle if detalle.lstrip().startswith('<html>') else build_html_inconsistencia(
+                        'sin factura',
+                        os.path.basename(archivo),
+                        detalle,
+                    ),
+                )
+            except Exception:
+                description_archivo = traceback.format_exc()
+                logging.exception('Error no controlado procesando archivo | archivo=%s', os.path.basename(archivo))
+                html_msg_admin = build_html_inconsistencia(
+                    'sin factura',
+                    os.path.basename(archivo),
+                    description_archivo,
+                )
+                safe_send_mail(
+                    os.getenv('EMAIL_ADMINISTRACION', ''),
+                    f'Error no controlado procesando Factura CAC ce Cert Origen {os.path.basename(archivo)}',
+                    description_archivo,
+                    html_msg_admin,
+                )
+
+        end_time = util.show_time('Fin')
+        print(f'Tiempo de ejecución: {end_time - start_time}')
+
     except Exception as e:
         description = traceback.format_exc()
         traceback.print_exc()
         print(description)
         frame = inspect.currentframe()
         function_name = inspect.getframeinfo(frame).function
-        print(f"Error ocurrió en la función: {function_name}")
-        print(f"Archivo: {inspect.getfile(frame)}")
-        print(f"Error: {e}")
+        print(f'Error ocurrió en la función: {function_name}')
+        print(f'Archivo: {inspect.getfile(frame)}')
+        print(f'Error: {e}')
 
         html_msg = f"""<html>
         <body>
@@ -287,7 +588,14 @@ def main():
             <p>Descripción: {description}</p>
         </body>
         </html>"""
-        smtp.smtp.SendMail(os.getenv('EMAIL_TICKETS', ''), f"Lectura de Remito {archivo}", f"{description} {frame} {function_name}",html_msg , "")
+        logging.exception('Error fatal en extraer_factura.main')
+        safe_send_mail(
+            os.getenv('EMAIL_TICKETS', ''),
+            f'Lectura de Factura {os.path.basename(archivo)}',
+            f'{description} {frame} {function_name}',
+            html_msg,
+        )
 
 
-main()
+if __name__ == '__main__':
+    main()

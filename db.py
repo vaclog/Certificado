@@ -75,11 +75,22 @@ class DB:
             lista.append(valor)
             return True
         return False
+
+    def agregarCertificadoNoEncontrado(self, lista, nro_remito, certificado):
+        item = {
+            'nro_remito': nro_remito,
+            'certificado': certificado,
+        }
+        if item not in lista:
+            lista.append(item)
+            return True
+        return False
     #([nro_remito, ce, fecha_factura, nro_factura, precio_unitario, fecha_update,'proceso de alta'])
     #  0,          1,   2,            3,           4,               5            6
     def CertificadoFactura(self, values, total):
         total_calculado = 0
         remitos_no_encontrados=[]
+        certificados_no_encontrados = []
         try:
             with self.conn.cursor(dictionary=True) as cursor:
                 for data in values:
@@ -129,10 +140,11 @@ class DB:
                             raise util.PDFInconsistente(f"ERROR: NO SE UBICO EN LA TABLA el certificado {data[1]} del remito {data[0]}")
                         
                     except util.PDFInconsistente as e:  
-                        self.agregarRemitoNoEncontrado(remitos_no_encontrados, data[0])  
+                        self.agregarRemitoNoEncontrado(remitos_no_encontrados, data[0])
+                        self.agregarCertificadoNoEncontrado(certificados_no_encontrados, data[0], data[1])
                         print(e)
                 
-                return total_calculado, remitos_no_encontrados
+                return total_calculado, remitos_no_encontrados, certificados_no_encontrados
                     #self.conn.rollback()
                     
         except util.PDFInconsistente as e:
