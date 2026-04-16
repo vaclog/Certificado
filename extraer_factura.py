@@ -335,6 +335,39 @@ def buscar_xlsx(directorio):
     return sorted(archivos)
 
 
+def extract_file_batch_key(nombre_archivo):
+    match = re.search(r'(\d{8}_\d{6}_\d{3})', nombre_archivo)
+    return match.group(1) if match else None
+
+
+def buscar_pdf_relacionado(ruta_xlsx):
+    directorio = os.path.dirname(ruta_xlsx)
+    clave = extract_file_batch_key(os.path.basename(ruta_xlsx))
+    if not clave:
+        raise util.PDFInconsistente(
+            f'No se pudo obtener la clave fecha_hora desde el archivo {os.path.basename(ruta_xlsx)}.'
+        )
+
+    candidatos = []
+    for archivo in os.listdir(directorio):
+        if not archivo.lower().endswith('.pdf'):
+            continue
+        if extract_file_batch_key(archivo) == clave:
+            candidatos.append(os.path.join(directorio, archivo))
+
+    if len(candidatos) == 1:
+        return candidatos[0]
+
+    if len(candidatos) == 0:
+        raise util.PDFInconsistente(
+            f'No se encontro el PDF relacionado para {os.path.basename(ruta_xlsx)} con clave {clave}.'
+        )
+
+    raise util.PDFInconsistente(
+        f'Se encontraron multiples PDF relacionados para {os.path.basename(ruta_xlsx)} con clave {clave}.'
+    )
+
+
 def mover_archivo(nombre_archivo, directorio_destino):
     if not os.path.isfile(nombre_archivo):
         raise FileNotFoundError(f"El archivo '{nombre_archivo}' no existe.")
@@ -345,6 +378,13 @@ def mover_archivo(nombre_archivo, directorio_destino):
     nombre_archivo_nuevo = os.path.join(directorio_destino, os.path.basename(nombre_archivo))
     shutil.move(nombre_archivo, nombre_archivo_nuevo)
     return nombre_archivo_nuevo
+
+
+def mover_archivos(nombre_archivos, directorio_destino):
+    movidos = []
+    for nombre_archivo in nombre_archivos:
+        movidos.append(mover_archivo(nombre_archivo, directorio_destino))
+    return movidos
 
 
 def build_html_inconsistencia(
@@ -448,7 +488,7 @@ def safe_send_mail(to, subject, plain_message, html_message):
         return False
 
 
-def procesar_factura(dbase, archivo, nro_factura, data_factura):
+def procesar_factura(dbase, archivo_origen, archivo_pdf, nro_factura, data_factura):
     total_factura = round(data_factura['total_factura'], 2)
     total_calculado, remitos_no_encontrados, certificados_no_encontrados = dbase.CertificadoFactura(
         data_factura['values'],
@@ -463,7 +503,7 @@ def procesar_factura(dbase, archivo, nro_factura, data_factura):
     print(f'Certificados no encontrados: {certificados_no_encontrados}')
     logging.info(
         'Factura procesada | archivo=%s | factura=%s | items=%s | total_factura=%.2f | total_calculado=%.2f | remitos_no_encontrados=%s | certificados_no_encontrados=%s',
-        archivo,
+        archivo_pdf,
         nro_factura,
         len(data_factura['values']),
         total_factura,
@@ -473,7 +513,7 @@ def procesar_factura(dbase, archivo, nro_factura, data_factura):
     )
 
     dbase.CertificadoDocumentoInsertOrUpdate([
-        nro_factura,
+        archivo_pdf,
         nro_factura,
         total_factura,
         total_calculado,
@@ -483,7 +523,7 @@ def procesar_factura(dbase, archivo, nro_factura, data_factura):
         raise util.PDFInconsistente(
             build_html_inconsistencia(
                 nro_factura,
-                archivo,
+                archivo_origen,
                 'Se encontraron remitos o certificados que no existen en la tabla de certificados.',
                 remitos_no_encontrados=remitos_no_encontrados,
                 certificados_no_encontrados=certificados_no_encontrados,
@@ -494,7 +534,7 @@ def procesar_factura(dbase, archivo, nro_factura, data_factura):
         raise util.PDFInconsistente(
             build_html_inconsistencia(
                 nro_factura,
-                archivo,
+                archivo_origen,
                 'El total de la factura no coincide con el total calculado.',
                 total_factura=total_factura,
                 total_calculado=total_calculado,
@@ -512,17 +552,33 @@ def main():
 
         for archivo in archivos_xlsx:
             try:
+                archivo_pdf = buscar_pdf_relacionado(archivo)
+                archivo_pdf_nombre = os.path.basename(archivo_pdf)
                 print(f'Archivo: {archivo}')
-                logging.info('Inicio archivo Excel | archivo=%s', os.path.basename(archivo))
+                logging.info(
+                    'Inicio archivo Excel | archivo_xlsx=%s | archivo_pdf=%s',
+                    os.path.basename(archivo),
+                    archivo_pdf_nombre,
+                )
                 facturas = extraer_facturas_desde_xlsx(archivo)
                 if not facturas:
                     raise util.PDFInconsistente('El archivo no contiene filas procesables.')
 
                 for nro_factura, data_factura in facturas.items():
-                    procesar_factura(dbase, os.path.basename(archivo), nro_factura, data_factura)
+                    procesar_factura(
+                        dbase,
+                        os.path.basename(archivo),
+                        archivo_pdf_nombre,
+                        nro_factura,
+                        data_factura,
+                    )
 
-                mover_archivo(archivo, os.getenv('PROCESSED_FOLDER', ''))
-                logging.info('Archivo movido a procesados | archivo=%s', os.path.basename(archivo))
+                mover_archivos([archivo, archivo_pdf], os.getenv('PROCESSED_FOLDER', ''))
+                logging.info(
+                    'Archivos movidos a procesados | archivo_xlsx=%s | archivo_pdf=%s',
+                    os.path.basename(archivo),
+                    archivo_pdf_nombre,
+                )
             except ExcelRowError as e:
                 detalle = e.describe()
                 print(f'Error: {detalle}')
