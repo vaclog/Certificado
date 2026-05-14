@@ -162,27 +162,27 @@ class DB:
         sentence_update=f"""
                     UPDATE cert_origen_documentos SET
                                  
-                                nro_factura = %s, 
+                                archivo = %s, 
                                 total_factura=%s,
                                 total_calculado = %s
-                    WHERE archivo = %s
+                    WHERE nro_factura = %s
                       AND anulado = 'N'
                     """
         check_query = f"""
             SELECT COUNT(*) as cantidad FROM cert_origen_documentos
-            WHERE archivo = %s 
+            WHERE nro_factura = %s 
               AND anulado = 'N'
             """
         
 
         
         with self.conn.cursor(dictionary=True) as cursor:
-            cursor.execute(check_query, (data[0],))
+            cursor.execute(check_query, (data[1],))
             exists = cursor.fetchone()['cantidad']
             if exists== 0:
                 cursor.execute(sentence_insert, data)
             else:
-                cursor.execute(sentence_update, (data[1], data[2], data[3], data[0]))
+                cursor.execute(sentence_update, (data[0], data[2], data[3], data[1]))
             
             self.conn.commit()
 
