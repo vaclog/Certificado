@@ -166,6 +166,7 @@ class DB:
                                 total_factura=%s,
                                 total_calculado = %s
                     WHERE nro_factura = %s
+                      AND subido_a_dux = 'N'
                       AND anulado = 'N'
                     """
         check_query = f"""
