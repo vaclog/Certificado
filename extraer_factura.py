@@ -31,7 +31,7 @@ REQUIRED_COLUMNS = {
     'fecha_factura': ['fecha facura', 'fecha factura'],
     'remito': ['remito'],
     'numero_serie': ['numero de serie'],
-    'total_pedido': ['total pedido'],
+    'total_pedido': ['total pedido', 'total factura'],
     'nombre_material': ['nombre material'],
 }
 
