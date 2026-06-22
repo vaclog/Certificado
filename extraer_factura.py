@@ -464,7 +464,7 @@ def html_to_plain_text(value):
     return text.strip()
 
 
-def safe_send_mail(to, subject, plain_message, html_message):
+def safe_send_mail(to, subject, plain_message, html_message, attachment=''):
     recipients = normalize_mail_recipients(to)
     fallback = normalize_mail_recipients(os.getenv('EMAIL_TICKETS', ''))
     if not recipients and fallback:
@@ -483,7 +483,7 @@ def safe_send_mail(to, subject, plain_message, html_message):
         plain_message = html_to_plain_text(html_message)
 
     try:
-        smtp.smtp.SendMail(recipients, subject, plain_message, html_message, '')
+        smtp.smtp.SendMail(recipients, subject, plain_message, html_message, attachment)
         logging.info('Correo enviado | to=%s | subject=%s', recipients, subject)
         return True
     except Exception:
@@ -597,6 +597,7 @@ def main():
                     f'Inconsistencia en Excel de Factura CAC ce Cert Origen {os.path.basename(archivo)}',
                     detalle,
                     html_msg_admin,
+                    archivo,
                 )
             except util.PDFInconsistente as e:
                 detalle = str(e)
@@ -611,6 +612,7 @@ def main():
                         os.path.basename(archivo),
                         detalle,
                     ),
+                    archivo,
                 )
             except Exception:
                 description_archivo = traceback.format_exc()
@@ -625,6 +627,7 @@ def main():
                     f'Error no controlado procesando Factura CAC ce Cert Origen {os.path.basename(archivo)}',
                     description_archivo,
                     html_msg_admin,
+                    archivo,
                 )
 
         end_time = util.show_time('Fin')
