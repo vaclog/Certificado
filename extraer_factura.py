@@ -63,7 +63,11 @@ def normalize_header(value):
 
 
 def find_required_columns(headers):
-    index_by_header = {normalize_header(header): idx for idx, header in enumerate(headers)}
+    index_by_header = {}
+    for idx, header in enumerate(headers):
+        key = normalize_header(header)
+        if key not in index_by_header:
+            index_by_header[key] = idx
     resolved = {}
     missing = []
 
