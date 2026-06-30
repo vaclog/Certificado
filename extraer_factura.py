@@ -599,6 +599,7 @@ def main():
                     html_msg_admin,
                     archivo,
                 )
+                mover_archivos([archivo, archivo_pdf], os.getenv('PROCESSED_FOLDER', ''))
             except util.PDFInconsistente as e:
                 detalle = str(e)
                 print(f'Error: {detalle}')
