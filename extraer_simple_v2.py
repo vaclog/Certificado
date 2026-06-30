@@ -152,7 +152,7 @@ def main():
         for archivo in archivos_pdf:
             rx, fecha, certificados = extraer_informacion_pdf(archivo)
             if rx is None:
-                #mover_archivo(archivo, os.getenv('PROCESSED_FOLDER', ''))
+                mover_archivo(archivo, os.getenv('PROCESSED_FOLDER', ''))
                 print(f"Archivo {archivo} no contiene RX0001")
                 continue
             print(f"Archivo: {archivo}")
