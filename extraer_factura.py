@@ -604,6 +604,7 @@ def main():
                 detalle = str(e)
                 print(f'Error: {detalle}')
                 logging.error('Error de negocio | archivo=%s | detalle=%s', os.path.basename(archivo), detalle)
+                mover_archivos([archivo, archivo_pdf], os.getenv('PROCESSED_FOLDER', ''))
                 safe_send_mail(
                     os.getenv('EMAIL_ADMINISTRACION', ''),
                     f'Inconsistencia en procesar Factura CAC ce Cert Origen {os.path.basename(archivo)}',
@@ -615,6 +616,8 @@ def main():
                     ),
                     archivo,
                 )
+                
+
             except Exception:
                 description_archivo = traceback.format_exc()
                 logging.exception('Error no controlado procesando archivo | archivo=%s', os.path.basename(archivo))
