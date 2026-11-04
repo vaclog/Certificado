@@ -37,7 +37,14 @@ def extraer_informacion_pdf(ruta_pdf):
     razon_social_objetivo = "RUGGERO VACCARI Y ASOCIADOS S A"
     cuit_objetivo = "30638406167"
     tipo_documento_objetivo = "REMITO"
-    if tipo_documento_objetivo not in texto_completo or razon_social_objetivo not in texto_completo or cuit_objetivo not in texto_completo:
+    if tipo_documento_objetivo not in texto_completo:
+        logging.info(f"Archivo ignorado. No es un remito: {ruta_pdf}")
+        documento.close()
+        return None, None, []
+
+    if razon_social_objetivo not in texto_completo or cuit_objetivo not in texto_completo:
+        documento.close()
+        mover_archivo(ruta_pdf, os.getenv('ERROR_FOLDER', ''))
         logging.info(f"Archivo ignorado. No coincide con razón social ni CUIT: {ruta_pdf}")
         return None, None, []  # Devolver vacío para ignorar el archivo
 
@@ -153,7 +160,7 @@ def main():
             rx, fecha, certificados = extraer_informacion_pdf(archivo)
             if rx is None:
                 #mover_archivo(archivo, os.getenv('PROCESSED_FOLDER', ''))
-                print(f"Archivo {archivo} no contiene RX0001")
+                print(f"Archivo {archivo} ignorado: no corresponde al tipo, razón social o CUIT esperado")
                 continue
             print(f"Archivo: {archivo}")
             print(f"RX0001: {rx}")

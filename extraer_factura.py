@@ -545,7 +545,6 @@ def procesar_factura(dbase, archivo_origen, archivo_pdf, nro_factura, data_factu
             )
         )
 
-
 def main():
     archivo = ''
     try:
@@ -556,6 +555,27 @@ def main():
 
         for archivo in archivos_xlsx:
             try:
+                try:
+                    facturas = extraer_facturas_desde_xlsx(archivo)
+                except ExcelRowError as e:
+                    detalle = e.describe()
+                    print(f'Error: {detalle}')
+                    logging.error('Error de formato Excel | %s', detalle)
+                    html_msg_admin = build_html_inconsistencia(
+                        e.factura or 'sin factura',
+                        e.archivo,
+                        detalle,
+                    )
+                    safe_send_mail(
+                        os.getenv('EMAIL_ADMINISTRACION', ''),
+                        f'Inconsistencia en Excel de Factura CAC ce Cert Origen {os.path.basename(archivo)}',
+                        detalle,
+                        html_msg_admin,
+                        archivo,
+                    )
+                    mover_archivo(archivo, os.getenv('ERROR_FOLDER', ''))
+                    continue
+
                 archivo_pdf = buscar_pdf_relacionado(archivo)
                 archivo_pdf_nombre = os.path.basename(archivo_pdf)
                 print(f'Archivo: {archivo}')
@@ -564,7 +584,6 @@ def main():
                     os.path.basename(archivo),
                     archivo_pdf_nombre,
                 )
-                facturas = extraer_facturas_desde_xlsx(archivo)
                 if not facturas:
                     raise util.PDFInconsistente('El archivo no contiene filas procesables.')
 
@@ -583,23 +602,6 @@ def main():
                     os.path.basename(archivo),
                     archivo_pdf_nombre,
                 )
-            except ExcelRowError as e:
-                detalle = e.describe()
-                print(f'Error: {detalle}')
-                logging.error('Error de fila Excel | %s', detalle)
-                html_msg_admin = build_html_inconsistencia(
-                    e.factura or 'sin factura',
-                    e.archivo,
-                    detalle,
-                )
-                safe_send_mail(
-                    os.getenv('EMAIL_ADMINISTRACION', ''),
-                    f'Inconsistencia en Excel de Factura CAC ce Cert Origen {os.path.basename(archivo)}',
-                    detalle,
-                    html_msg_admin,
-                    archivo,
-                )
-                mover_archivos([archivo, archivo_pdf], os.getenv('PROCESSED_FOLDER', ''))
             except util.PDFInconsistente as e:
                 detalle = str(e)
                 print(f'Error: {detalle}')
