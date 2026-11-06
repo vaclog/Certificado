@@ -29,6 +29,16 @@ sys.modules.setdefault("smtp", smtp_stub)
 
 import extraer_simple_v2
 
+for module_name, module_stub in (
+        ("fitz", fitz_stub),
+        ("dotenv", dotenv_stub),
+        ("pandas", sys.modules["pandas"]),
+        ("db", db_stub),
+        ("util", util_stub),
+        ("smtp", smtp_stub)):
+    if sys.modules.get(module_name) is module_stub:
+        del sys.modules[module_name]
+
 
 class _Pagina:
     def get_text(self):

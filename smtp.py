@@ -25,7 +25,7 @@ class Smtp:
             
     def _normalize_recipients(self, to):
         if isinstance(to, list):
-            recipients = to
+            recipients = re.split(r'[;,]', ','.join(str(recipient or '') for recipient in to))
         else:
             recipients = re.split(r'[;,]', str(to or ''))
 
@@ -71,8 +71,11 @@ class Smtp:
         with smtplib.SMTP_SSL(self.host, self.port, context=context) as self.server:
         #with smtplib.SMTP(self.host, 587) as self.server:
             self.server.login(self.user, self.password)
-            
-            self.server.sendmail(self.user, recipients, message.as_string())
+
+            for recipient in recipients:
+                refused = self.server.sendmail(self.user, [recipient], message.as_string())
+                if refused:
+                    raise smtplib.SMTPRecipientsRefused(refused)
 config = config.Config()   
 smtp = Smtp( config.smtp_host , config.smtp_port ,
             config.smtp_user , config.smtp_password, config.sender_mail )

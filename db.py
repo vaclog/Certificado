@@ -23,6 +23,7 @@ class DB:
         except Exception as e:
             print(traceback.format_exc())
             print(e)
+            raise
     def CertificadoInsert(self, data):
         try:
             sentence=f"""
